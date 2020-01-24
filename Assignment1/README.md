@@ -6,6 +6,7 @@ Overview:
 
 Reads in parameters for neu_id, host_ip, port using argsparse
 Creates socket
+Wraps socket in sll wrapper if -s flag triggered
 Connects to socket using parameters
 Sends Initial HELLO message
 

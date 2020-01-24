@@ -1,9 +1,19 @@
 import socket
+import sys
+import argparse
 
-neu_id = '001880538'
-host_ip = 'fring.ccs.neu.edu'
-port = 27993
-tup1 = (host_ip, port)
+# Setup Argument Parser
+parser = argparse.ArgumentParser(description='Process argument flags')
+parser.add_argument('host_ip', action="store",type=str)
+parser.add_argument('neu_id', action="store", type=str)
+parser.add_argument('-p', action="store",dest="port",type=int)
+parser.add_argument('-s', action="store_true", default=False)
+
+#args = parser.parse_args(['fring.ccs.neu.edu','001880538','-p','27993'])
+
+args = parser.parse_args(sys.argv)
+
+tup1 = (args.host_ip, args.port)
 
 # create socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -12,14 +22,13 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect(tup1)
 
 ## Send some data, this method can be called multiple times
-m1 = 'cs3700spring2020 HELLO ' + neu_id + '\n'
+m1 = 'cs3700spring2020 HELLO ' + args.neu_id + '\n'
 s.sendall(m1.encode('ascii'))
 
 from_server = ''
 continue_recv = True
 find_continue_recv = True
 
-# Loop while FIND message are being sent from Server
 while find_continue_recv:
   ##### GET SERVER MESSAGE ######
   while continue_recv:

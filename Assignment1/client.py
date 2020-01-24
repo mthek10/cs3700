@@ -19,6 +19,7 @@ from_server = ''
 continue_recv = True
 find_continue_recv = True
 
+# Loop while FIND message are being sent from Server
 while find_continue_recv:
   ##### GET SERVER MESSAGE ######
   while continue_recv:

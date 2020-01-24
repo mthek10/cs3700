@@ -3,6 +3,11 @@
 import socket
 import sys
 import argparse
+import ssl
+
+# defined to use -s conditionals
+ssl_flag = False
+port = -1
 
 # Setup Argument Parser
 parser = argparse.ArgumentParser(description='Process argument flags')
@@ -12,9 +17,7 @@ parser.add_argument('name_program',action="store")
 parser.add_argument('host_ip', action="store",type=str)
 parser.add_argument('neu_id', action="store", type=str)
 # defaults to false b/c EC
-parser.add_argument('-s', action="store_true", default=False)
-
-#args = parser.parse_args(['fring.ccs.neu.edu','001880538','-p','27993'])
+parser.add_argument('-s', action="store_true", default=False, dest = "ssl_flag")
 
 args = parser.parse_args(sys.argv)
 
@@ -22,6 +25,10 @@ tup1 = (args.host_ip, args.port)
 
 # create socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+if ssl_flag:
+  s = ssl.wrap_socket(s)
+  if port == 27993:
+    port = 27994
 
 ## Connect to an IP with Port, could be a URL
 s.connect(tup1)

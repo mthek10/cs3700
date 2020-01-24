@@ -6,9 +6,10 @@ import argparse
 
 # Setup Argument Parser
 parser = argparse.ArgumentParser(description='Process argument flags')
+parser.add_argument('-p', action="store",dest="port",type=int, default=27993)
 parser.add_argument('host_ip', action="store",type=str)
 parser.add_argument('neu_id', action="store", type=str)
-parser.add_argument('-p', action="store",dest="port",type=int)
+
 parser.add_argument('-s', action="store_true", default=False)
 
 #args = parser.parse_args(['fring.ccs.neu.edu','001880538','-p','27993'])

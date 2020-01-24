@@ -4,7 +4,7 @@ Date: January 24, 2020
 
 Overview:
 
-Reads in parameters for neu_id, host_ip, port
+Reads in parameters for neu_id, host_ip, port using argsparse
 Creates socket
 Connects to socket using parameters
 Sends Initial HELLO message

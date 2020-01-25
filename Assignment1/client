@@ -22,7 +22,6 @@ args = parser.parse_args(sys.argv)
 # create socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 if args.ssl_flag:
-  print('trying ssl \n')
   s = ssl.wrap_socket(s)
   if args.port == 27993:
     args.port = 27994

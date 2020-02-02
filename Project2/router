@@ -59,31 +59,78 @@ class Router:
   def lookup_routes(self, daddr):
     """ Lookup all valid routes for an address """
     # TODO
-    outroutes = []
+    outroutes = {}
+
+    net_pre = daddr[0 : daddr.index('.')]
+
+    for ip in self.routes.keys():
+      ip_pre = ip[0 : ip.index('.')]
+      if ip_pre == net_pre:
+        outroutes[ip] = self.routes[ip]
+
     return outroutes
 
   def get_shortest_as_path(self, routes):
     """ select the route with the shortest AS Path """
-    # TODO
-    outroutes = []
+    # Max size of route below
+    size = 999;
+    outroutes = {}
+
+    for ip in routes.keys():
+      if len(routes[ip][APTH]) < size:
+        size = len(routes[ip][APTH])
+
+    for ip in routes.keys():
+      if len(routes[ip][APTH]) == size:
+        outroutes[ip] = routes[ip]
+
     return outroutes
 
   def get_highest_preference(self, routes):
-    """ select the route with the shortest AS Path """
-    # TODO
-    outroutes = []
+    """ select the route with highest preference """
+    # routes is all possible routes to daddr
+    outroutes = {}
+    highest = 0
+
+    for ip in routes.keys():
+      if routes[ip][LPRF] > highest:
+        highest = routes[ip][LPRF]
+
+    for ip in routes.keys():
+      if routes[ip][LPRF] == highest:
+        outroutes[ip] = routes[ip]
+
     return outroutes
 
   def get_self_origin(self, routes):
     """ select self originating routes """
     # TODO
-    outroutes = []
+    outroutes = {}
+
+    for ip in routes.keys():
+      if routes[ip][SORG]:
+        outroutes[ip] = routes[ip]
+
     return outroutes
 
   def get_origin_routes(self, routes):
-    """ select origin routes: EGP > IGP > UNK """
+    """ select origin routes:  IGP > EGP > UNK """
     # TODO
-    outroutes = []
+    outroutes = {}
+
+    for ip in routes.keys():
+      if routes[ip][ORIG] == "IGP":
+        outroutes[ip] = routes[ip]
+
+    if len(outroutes) == 0:
+      for ip in routes.keys():
+        if routes[ip][ORIG] == "EGP":
+          outroutes[ip] = routes[ip]
+
+    # If no IGP nor EGP were found return rest of routes bc UNK
+    if len(outroutes) == 0:
+      return routes
+
     return outroutes
 
   def filter_relationships(self, srcip, routes):
@@ -91,45 +138,116 @@ class Router:
     outroutes = []
     return outroutes
 
+  def ip_to_bits(self, ip):
+    i1 = ip.index('.')
+    i2 = ip.index('.', i1 + 1)
+    i3 = ip.index('.', i2 + 1)
+    net_pre = ip[0: i1]
+    net_pre2 = ip[i1 + 1: i2]
+    net_pre3 = ip[i2 + 1: i3]
+    net_pre4 = ip[i3 + 1: len(ip)]
+
+    b1 = bin(int(net_pre))
+    b2 = bin(int(net_pre2))
+    b3 = bin(int(net_pre3))
+    b4 = bin(int(net_pre4))
+
+    rb1 = b1[2:len(ip)]
+    rb2 = b2[2:len(ip)]
+    rb3 = b3[2:len(ip)]
+    rb4 = b4[2:len(ip)]
+
+    print("Lucia's place:" + rb1 + '.' + rb2 + '.' + rb3 +'.'+ rb4)
+
+    return rb1 + '.' + rb2 + '.' + rb3 +'.'+ rb4
+
+  def compare_ips(self, ip1, ip2):
+    incommon = 0
+
+    for x in range(len(ip1)):
+      if ip1[x] == ip2[x]:
+        incommon += 1
+      else:
+        return incommon
+
+
   def get_route(self, srcip, daddr):
     """ Select the best route for a given address """
-    # TODO
+    # TODO fill in peer?
     peer = None
-    routes = self.lookup_routes(daddr)
+    pos_routes = self.lookup_routes(daddr)
     # Rules go here
-    if routes:
+    if pos_routes:
       # 1. Highest Preference
-      routes = self.get_highest_preference(routes)
+      pos_routes = self.get_highest_preference(pos_routes)
       # 2. Self Origin
-      routes = self.get_self_origin(routes)
+      pos_routes = self.get_self_origin(pos_routes)
       # 3. Shortest ASPath
-      routes = self.get_shortest_as_path(routes)
+      pos_routes = self.get_shortest_as_path(pos_routes)
       # 4. EGP > IGP > UNK
-      routes = self.get_origin_routes(routes)
+      pos_routes = self.get_origin_routes(pos_routes)
       # 5. Lowest IP Address
-      # TODO
+
+      daddrbit = self.ip_to_bits(daddr)
+
+      bitmap = {}
+      highmap = {}
+
+      highestincommon = 0
+
+      for ip in pos_routes.keys():
+        bitmap[ip] = self.ip_to_bits(ip)
+
+      for ip in pos_routes.keys():
+        bitversion = self.ip_to_bits(ip)
+        compval = self.compare_ips(daddrbit, bitversion)
+        highmap[ip] = compval
+        if compval > highestincommon:
+          highestincommon = compval
+
+      lowest_ip = '0.0.0.0'
+      for ip in pos_routes.keys():
+        if highestincommon == highmap[ip]:
+          lowest_ip = highmap[ip]
+
+
       # Final check: enforce peering relationships
-      routes = self.filter_relationships(srcip, routes)
+      route = self.filter_relationships(srcip, pos_routes)
+      peer = route
     return self.sockets[peer] if peer else None
 
   def forward(self, srcip, packet):
     """ Forward a data packet """
     print("in forward")
-    sock = self.sockets[srcip]
+
+    # get route to send packet
+    best_route = self.get_route(srcip, packet['dst'])
+
+    sock = self.sockets[best_route]
+
+
     jsonpack = json.dumps(packet)
     print("sending json")
     sock.sendall(jsonpack.encode())
-    # TODO
+    # TODO fix src and dest
     return False
 
   def coalesce(self):
     """ coalesce any routes that are right next to each other """
-    # TODO (this is the most difficult task, save until last)
+    # TODO (this is the most difficult task, save until last)   
     return False
 
   def update(self, srcip, packet):
     """ handle update packets """
     print("in update")
+
+    # TODO save copy of announcement
+    self.updates;
+
+    # add entry to forwarding table
+
+    # decide if send copies of announcement to neighboring routers
+
     self.updates[srcip] = packet
     msg = packet[MESG]
     self.routes[srcip] = msg
@@ -139,7 +257,7 @@ class Router:
         self.forward(ip,packet)
 
 
-    # TODO 
+    # TODO
     return False
 
   def revoke(self, packet):
@@ -150,16 +268,67 @@ class Router:
   def dump(self, packet):
     """ handles dump table requests """
     # TODO
+    packet['type'] = "table"
+    src = packet['src']
+    packet['src'] = packet['dst']
+    packet['dst'] = src
+
+    print("creating table string")
+    # TODO fill out table string with routing table
+    table_string = ""
+    # TODO asking for int indexes instead of string for route?
+    for ip in self.routes.keys():
+      print("route: " + route)
+      # TODO have to fill ip address of peer
+      entry = "\"network\" : \"<" + self.routes[ip]['network'] + ">\", \"netmask\" : \"<" + self.routes[ip]['netmask'] + ">\", \"peer\" : \"<" + "PEER"  + ">\""
+      table_string += entry
+    packet['msg'] = "\[\n" + table_string + "\n\]"
+    msg = json.dumps(packet)
+    print("dumping msg: ")
+    print(msg)
+
     return True
 
   def handle_packet(self, srcip, packet):
     """ dispatches a packet """
     # TODO
+    print("REACHED HANDLE PACKET")
+    type = packet['type']
+    print (type)
+    if type == 'update':
+      self.update(srcip, packet)
+      print("sending to update")
+    elif type == 'dump':
+      self.dump(packet)
+      print("sending to dump")
+    elif type == 'data':
+      # check if a route is in forwarding table
+      # if so forward
+      self.forward(srcip,packet)
+      # TODO if no route found send to no route (Send error)
+
+
+      print("sending to forward")
+    elif type == 'revoke':
+      self.revoke(packet)
+      print("sending to revoke")
+
     return False
 
   def send_error(self, conn, msg):
     """ Send a no_route error message """
+    # dst ip becomes src ip to return the message
+
+    # src ip becomes this ip
+
+    # type becomes "no route"
+
+    # msg is empty
+
+    # send from port incoming...current dst ip?
+
     # TODO
+
     return
 
   def run(self):
@@ -177,7 +346,8 @@ class Router:
             if self.sockets[sock] == conn:
               srcip = sock
           msg = json.loads(k)
-          self.update(srcip, msg)
+          # TODO commented out below code because handled by handle packet
+          #self.update(srcip, msg)
           #print(msg[TYPE])
           #print(json.dumps(msg, sort_keys=True, indent=4))
           if not self.handle_packet(srcip, msg):

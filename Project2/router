@@ -147,16 +147,12 @@ class Router:
     net_pre3 = ip[i2 + 1: i3]
     net_pre4 = ip[i3 + 1: len(ip)]
 
-    b1 = bin(int(net_pre))
-    b2 = bin(int(net_pre2))
-    b3 = bin(int(net_pre3))
-    b4 = bin(int(net_pre4))
+    rb1 = format(int(net_pre), '008b')
+    rb2 = format(int(net_pre2), '008b')
+    rb3 = format(int(net_pre3), '008b')
+    rb4 = format(int(net_pre4), '008b')
 
-    rb1 = b1[2:len(ip)]
-    rb2 = b2[2:len(ip)]
-    rb3 = b3[2:len(ip)]
-    rb4 = b4[2:len(ip)]
-
+    print("ip:" + ip)
     print("Lucia's place:" + rb1 + '.' + rb2 + '.' + rb3 +'.'+ rb4)
 
     return rb1 + '.' + rb2 + '.' + rb3 +'.'+ rb4
@@ -170,6 +166,7 @@ class Router:
       else:
         return incommon
 
+    return incommon
 
   def get_route(self, srcip, daddr):
     """ Select the best route for a given address """
@@ -192,6 +189,8 @@ class Router:
 
       bitmap = {}
       highmap = {}
+      highmap2 = {}
+
 
       highestincommon = 0
 
@@ -202,18 +201,21 @@ class Router:
         bitversion = self.ip_to_bits(ip)
         compval = self.compare_ips(daddrbit, bitversion)
         highmap[ip] = compval
+        highmap2[compval] = ip
         if compval > highestincommon:
           highestincommon = compval
 
-      lowest_ip = '0.0.0.0'
+      lowest_ip = '00000000.00000000.00000000.00000000'
       for ip in pos_routes.keys():
         if highestincommon == highmap[ip]:
-          lowest_ip = highmap[ip]
+          lowest_ip = highmap2[highestincommon]
 
 
       # Final check: enforce peering relationships
-      route = self.filter_relationships(srcip, pos_routes)
-      peer = route
+      #route = self.filter_relationships(srcip, pos_routes)
+      peer = lowest_ip
+
+      print("Peer:" + peer)
     return self.sockets[peer] if peer else None
 
   def forward(self, srcip, packet):
@@ -223,7 +225,7 @@ class Router:
     # get route to send packet
     best_route = self.get_route(srcip, packet['dst'])
 
-    sock = self.sockets[best_route]
+    sock = best_route
 
 
     jsonpack = json.dumps(packet)
@@ -234,7 +236,7 @@ class Router:
 
   def coalesce(self):
     """ coalesce any routes that are right next to each other """
-    # TODO (this is the most difficult task, save until last)   
+    # TODO (this is the most difficult task, save until last)
     return False
 
   def update(self, srcip, packet):
@@ -242,23 +244,26 @@ class Router:
     print("in update")
 
     # TODO save copy of announcement
-    self.updates;
+    self.updates[packet[SRCE]] = packet
 
     # add entry to forwarding table
+    msg = packet[MESG]
+    self.routes[srcip] = msg
 
     # decide if send copies of announcement to neighboring routers
 
-    self.updates[srcip] = packet
-    msg = packet[MESG]
-    self.routes[srcip] = msg
     for ip in self.sockets.keys():
       if not(ip == srcip):
-        print("called forward")
-        self.forward(ip,packet)
+        packet['src'] = packet['dst']
+        packet['dst'] = ip
 
+        jsonpack = json.dumps(packet)
+        print("sending json")
+
+        self.sockets[ip].sendall(jsonpack.encode())
 
     # TODO
-    return False
+    return True
 
   def revoke(self, packet):
     """ handle revoke packets """
@@ -278,7 +283,7 @@ class Router:
     table_string = ""
     # TODO asking for int indexes instead of string for route?
     for ip in self.routes.keys():
-      print("route: " + route)
+      print("route: " + ip)
       # TODO have to fill ip address of peer
       entry = "\"network\" : \"<" + self.routes[ip]['network'] + ">\", \"netmask\" : \"<" + self.routes[ip]['netmask'] + ">\", \"peer\" : \"<" + "PEER"  + ">\""
       table_string += entry

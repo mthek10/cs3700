@@ -5,6 +5,7 @@ import argparse
 import json
 import select
 import socket
+import ipaddress
 
 ##########################################################################################
 
@@ -42,9 +43,9 @@ class Router:
   """ Your Router """
   def __init__(self, networks):
     self.asn = networks.pop(0)
-    self.routes = {} #forwarding table
-    self.updates = {} #store announcements
-    self.relations = {} #cust, peer, etc.
+    self.routes = {} #forwarding table [ip: list of content of update packets]
+    self.updates = {} #store announcements [ip: list of update packets]
+    self.relations = {} #cust, peer, etc. [ip: relationship to us]
     self.sockets = {}
     for relationship in networks:
       network, relation = relationship.split("-")
@@ -53,82 +54,122 @@ class Router:
       self.sockets[network].connect(network)
       self.relations[network] = relation
 
+  def convert_ip_to_bin(self, ip):
+    octets = ip.split('.')
+    ipbin = ''
+    for bit in octets:
+      ipbin += format(int(bit), '08b')
+
+    return ipbin
+
+  def is_possible_route(self, ip, network, netmask):
+
+    netobj = ipaddress.ip_network(network + "/" + netmask)
+    prefixlength = netobj.prefixlen
+
+    netbin = self.convert_ip_to_bin(network)
+    ipbin = self.convert_ip_to_bin(ip)
+
+    matching_bits = 0
+    for bit in range(0, prefixlength):
+      if netbin[bit] == ipbin[bit]:
+        matching_bits += 1
+      else:
+        break
+
+    return matching_bits == prefixlength
+
   def lookup_routes(self, daddr):
     """ Lookup all valid routes for an address """
     # TODO
     outroutes = []
 
-    net_pre = daddr[0 : daddr.index('.')] + '.0.0.0'
-
-    #print(self.routes)
-
-    for ip in self.routes.keys():
-      network = self.routes[ip][NTWK]
-      net_pre_2 = network[0:network.index('.')] + '.0.0.0'
-      if net_pre_2 == net_pre:
-        outroutes.append(ip)
+    for ip in self.routes:
+      for route in self.routes[ip]:
+        network = route[NTWK]
+        netmask = route[NMSK]
+        if self.is_possible_route(daddr, network, netmask) and not(ip in outroutes):
+          outroutes.append(ip)
     return outroutes
 
-  def get_shortest_as_path(self, routes):
+  def get_shortest_as_path(self, pos_routes):
     """ select the route with the shortest AS Path """
     # Max size of route below
     size = 999;
-    outroutes = {}
+    outroutes = []
 
-    for ip in routes.keys():
-      if len(routes[ip][APTH]) < size:
-        size = len(routes[ip][APTH])
+    for route in pos_routes:
+      for route_info in self.routes[route[0]]:
+        if route[1] == route_info[NTWK] and route[2] == route_info[NMSK] and len(route_info[APTH]) < size:
+          size = len(route_info[APTH])
 
-    for ip in routes.keys():
-      if len(routes[ip][APTH]) == size:
-        outroutes[ip] = routes[ip]
+    for route in pos_routes:
+      for route_info in self.routes[route[0]]:
+        if route[1] == route_info[NTWK] and route[2] == route_info[NMSK] and len(route_info[APTH]) == size:
+          outroutes.append(route)
 
     return outroutes
 
-  def get_highest_preference(self, routes):
+  def get_highest_preference(self, pos_routes):
     """ select the route with highest preference """
+    #pos_routes is list of tuples so [(router ip, network, netmask), (router ip, network, netmask),...]
+    #tuple structure is (router ip, network, netmask)
     # routes is all possible routes to daddr
-    outroutes = {}
+    outroutes = []
     highest = 0
 
-    for ip in routes.keys():
-      if routes[ip][LPRF] > highest:
-        highest = routes[ip][LPRF]
+    for route in pos_routes:
+      routerip = route[0]
+      network = route[1]
+      netmask = route[2]
+      for route_info in self.routes[routerip]:
+        if network == route_info[NTWK] and netmask == route_info[NMSK] and route_info[LPRF] > highest:
+          highest = route_info[LPRF]
 
-    for ip in routes.keys():
-      if routes[ip][LPRF] == highest:
-        outroutes[ip] = routes[ip]
+    for route in pos_routes:
+      routerip = route[0]
+      network = route[1]
+      netmask = route[2]
+      for route_info in self.routes[routerip]:
+        if network == route_info[NTWK] and netmask == route_info[NMSK] and route_info[LPRF] == highest:
+          outroutes.append(route)
 
     return outroutes
 
-  def get_self_origin(self, routes):
+  def get_self_origin(self, pos_routes):
     """ select self originating routes """
     # TODO
-    outroutes = {}
+    outroutes = []
 
-    for ip in routes.keys():
-      if routes[ip][SORG]:
-        outroutes[ip] = routes[ip]
+    for route in pos_routes:
+      for route_info in self.routes[route[0]]:
+        if route[1] == route_info[NTWK] and route[2] == route_info[NMSK] and route_info[SORG]:
+          outroutes.append(route)
+
+    if not outroutes:  #self origin was false for everyone
+      return pos_routes
 
     return outroutes
 
-  def get_origin_routes(self, routes):
+  def get_origin_routes(self, pos_routes):
     """ select origin routes:  IGP > EGP > UNK """
     # TODO
-    outroutes = {}
+    outroutes = []
 
-    for ip in routes.keys():
-      if routes[ip][ORIG] == "IGP":
-        outroutes[ip] = routes[ip]
+    for route in pos_routes:
+      for route_info in self.routes[route[0]]:
+        if route[1] == route_info[NTWK] and route[2] == route_info[NMSK] and route_info[ORIG] == "IGP":
+          outroutes.append(route)
 
     if len(outroutes) == 0:
-      for ip in routes.keys():
-        if routes[ip][ORIG] == "EGP":
-          outroutes[ip] = routes[ip]
+      for route in pos_routes:
+        for route_info in self.routes[route[0]]:
+          if route[1] == route_info[NTWK] and route[2] == route_info[NMSK] and route_info[ORIG] == "EGP":
+            outroutes.append(route)
 
     # If no IGP nor EGP were found return rest of routes bc UNK
     if len(outroutes) == 0:
-      return routes
+      return pos_routes
 
     return outroutes
 
@@ -137,86 +178,97 @@ class Router:
     outroutes = []
     return outroutes
 
-  def prefix_stuff(self, daddr, routes):
+  def get_longest_prefix_match(self, daddr):
+    longest_matches = []
+    longest_matches2 = []
 
+    longest_match = 0
+    for router_ip in self.routes: #ips
+      for route in self.routes[router_ip]:
+        network = route[NTWK]
+        netmask = route[NMSK]
+        if self.is_possible_route(daddr, network, netmask):
+          netobj = ipaddress.ip_network(network + "/" + netmask)
+          prefixlength = netobj.prefixlen
+          if prefixlength >= longest_match:
+            longest_match = prefixlength
+            longest_matches.append((router_ip, network, netmask))
+
+    for route in longest_matches: #tuples
+      netobj = ipaddress.ip_network(route[1] + "/" + route[2])
+      prefixlength = netobj.prefixlen
+      if prefixlength == longest_match:
+        longest_matches2.append(route)
+
+
+    return longest_matches2
+
+  def get_lowest_ip(self, pos_routes):
     outroutes = []
-    #find prefix in routes matching daddr
-    #look in self.routes for netmask on possible routes
-    #longer wins
 
-    highestmsk = 0
+    lowestip = '255.255.255.255'
+    for route in pos_routes:
+      routerip = route[0]
+      routeripbin = self.convert_ip_to_bin(routerip)
+      lowestipbin = self.convert_ip_to_bin(lowestip)
+      for bit in range(0, len(routeripbin)):
+        if routeripbin[bit] == '0' and lowestipbin[bit] == '1':
+          lowestip = routerip
+          break
+        elif routeripbin[bit] == '1' and lowestip[bit] == '0':
+          break
+        else:
+          continue
 
-    for ip in routes:
-      netmask = self.routes[ip][NMSK] #get netmask of possible ip
-      ii1 = netmask.index('.')
-      ii2 = netmask.index('.', ii1 + 1)
-      ii3 = netmask.index('.', ii2 + 1)
-      n1 = netmask[0: ii1]
-      n2 = netmask[ii1 + 1: ii2]
-      n3 = netmask[ii2 + 1: ii3]
-      n4 = netmask[ii3 + 1: len(netmask)]
-      maskval = int(n1) + int(n2) + int(n3) + int(n4)
-      if maskval > highestmsk:
-        highestmsk = maskval
-
-    for ip in routes: #loop through possible ips and find ones matching the ntmsk
-      netmask = self.routes[ip][NMSK]  # get netmask of possible ip
-      ii1 = netmask.index('.')
-      ii2 = netmask.index('.', ii1 + 1)
-      ii3 = netmask.index('.', ii2 + 1)
-      n1 = netmask[0: ii1]
-      n2 = netmask[ii1 + 1: ii2]
-      n3 = netmask[ii2 + 1: ii3]
-      n4 = netmask[ii3 + 1: len(netmask)]
-      maskval = int(n1) + int(n2) + int(n3) + int(n4)
-      if maskval == highestmsk:
-        outroutes.append(ip)
+    for route in pos_routes:
+      if route[0] == lowestip:
+        outroutes.append(route)
 
     return outroutes
 
   def get_route(self, srcip, daddr): #destinations add of this packet
     """ Select the best route for a given address """
     # TODO fill in peer?
-    peer = None
 
-    pos_routes = self.lookup_routes(daddr)
+    #pos_routes is list of tuples
+    #determine if there are any routes
+    pos_routes = self.get_longest_prefix_match(daddr)
 
-    #prefix stuff
-
-    pos_routes = self.prefix_stuff(daddr, pos_routes) #look through possible
-                                                      #and find prefix matching destination ip
+    if not pos_routes: #no possible routes, return None
+      return None
 
     # Rules go here
-    #if pos_routes:
+    if pos_routes:
       # 1. Highest Preference
-      #pos_routes = self.get_highest_preference(pos_routes)
+      pos_routes = self.get_highest_preference(pos_routes)
       # 2. Self Origin
-     # pos_routes = self.get_self_origin(pos_routes)
+      pos_routes = self.get_self_origin(pos_routes)
       # 3. Shortest ASPath
-     # pos_routes = self.get_shortest_as_path(pos_routes)
+      pos_routes = self.get_shortest_as_path(pos_routes)
       # 4. EGP > IGP > UNK
-     # pos_routes = self.get_origin_routes(pos_routes)
+      pos_routes = self.get_origin_routes(pos_routes)
       # 5. Lowest IP Address
-
-      #daddrbit = self.ip_to_bits(daddr)
+      pos_routes = self.get_lowest_ip(pos_routes)
 
       # Final check: enforce peering relationships
 
-      #route = self.filter_relationships(srcip, pos_routes)
-      #lowestip = 0;
+    peer = pos_routes[0][0]
 
-
-    peer = pos_routes[0]
-
-    return self.sockets[peer] if peer else None
+    return self.sockets[peer]
 
   def forward(self, srcip, packet): #gets entire packet and srcip of that packet
     """ Forward a data packet """
     # get route to send packet
     best_route = self.get_route(srcip, packet[DEST]) #is a socket
-
     sock = best_route
 
+
+    if sock == None:
+      dest_ip_port = list(srcip)
+      dest_ip_port[len(srcip) - 1] = '1'
+      packet[SRCE] = ''.join(dest_ip_port)
+      packet[DEST] = srcip
+      packet[TYPE] = NRTE
 
     jsonpack = json.dumps(packet)
     sock.sendall(jsonpack.encode())
@@ -232,19 +284,29 @@ class Router:
     """ handle update packets """
 
     # TODO save copy of announcement
+    if not(srcip in self.updates.keys()):
+      self.updates[srcip] = []
 
-    #print("the src ip: " + str(srcip))
-    self.updates[srcip] = packet #entire packet
+    self.updates[srcip].append(packet) #entire packet
+
     #print("the update packet originally")
     #print(json.dumps(self.updates[srcip], sort_keys=True, indent=4))
+
     # add entry to forwarding table
     path = packet[MESG][APTH]
     path.append(self.asn)
     packet[MESG][APTH] = path
+
     #print("the update message after apath")
+
     msg = packet[MESG]
+
     #print(json.dumps(msg, sort_keys=True, indent=4))
-    self.routes[srcip] = msg
+
+    if not(srcip in self.routes):
+      self.routes[srcip] = []
+
+    self.routes[srcip].append(msg)
 
     # decide if send copies of announcement to neighboring routers
 
@@ -265,7 +327,6 @@ class Router:
         jsonpack = json.dumps(packet)
 
         self.sockets[ip].sendall(jsonpack.encode())
-
     # TODO
     return True
 
@@ -287,14 +348,14 @@ class Router:
     # TODO fill out table string with routing table
     table_string = ""
     # TODO asking for int indexes instead of string for route?
-    for ip in self.updates.keys():
+    for ip in self.routes:
       # TODO have to fill ip address of peer
+      for route in self.routes[ip]:
+        entry = {'network' : route[NTWK], 'netmask' : route[NMSK], 'peer' : ip}
+        table_list.append(entry)
 
-      entry = {'network' : self.updates[ip][MESG][NTWK], 'netmask' : self.updates[ip][MESG][NMSK], 'peer' : ip}
-      table_list.append(entry)
     packet[MESG] = table_list
     msg = json.dumps(packet)
-    #print(json.dumps(packet, sort_keys=True, indent=4))
 
     sock = self.sockets[src]
     sock.sendall(msg.encode())

@@ -180,16 +180,11 @@ class Router:
     # if route is from a customer then add all routes
     if self.relations[srcip] == CUST:
       outroutes = routes
-      print("found send from customer")
     # if route is not from customer but is going to a customer add that route
     else:
       for route in routes:
-        print("self.relations:")
-        print(self.relations)
-        print("route[0]:")
-        print(route[0])
         if self.relations[route[0]] == CUST:
-          print("found send to customer")
+
           outroutes.append(route)
 
     return outroutes
@@ -266,27 +261,17 @@ class Router:
       # 5. Lowest IP Address
       pos_routes = self.get_lowest_ip(pos_routes)
 
-      print("Routes BEFORE filter")
-      print(pos_routes)
       # Final check: enforce peering relationships
       pos_routes = self.filter_relationships(srcip, pos_routes)
-      print("Routes AFTER filter")
-      print(pos_routes)
 
     # peer = pos_routes[0][0]
 
-    #print("pos_routes[0][0]")
-    #print(pos_routes[0][0])
 
     if not pos_routes: #no possible routes, return None
-      print("NO POS ROUTES LEFT")
       return None
 
-    print("Sockets")
-    print(self.sockets)
     for key in self.sockets.keys():
       if key == pos_routes[0][0]:
-        print("Found Correct Socket")
         return self.sockets[key]
 
     return None;
@@ -297,17 +282,16 @@ class Router:
     best_route = self.get_route(srcip, packet[DEST]) #is a socket
     sock = best_route
 
-    if sock == None:
-      return False
 
-    dest_ip_port = list(srcip)
-    dest_ip_port[len(srcip) - 1] = '1'
-    packet[SRCE] = ''.join(dest_ip_port)
-    packet[DEST] = srcip
-    packet[TYPE] = NRTE
+    if sock == None:
+      dest_ip_port = list(srcip)
+      dest_ip_port[len(srcip) - 1] = '1'
+      packet[SRCE] = ''.join(dest_ip_port)
+      packet[DEST] = srcip
+      packet[TYPE] = NRTE
+
     jsonpack = json.dumps(packet)
     sock.sendall(jsonpack.encode())
-
     # TODO fix src and dest
     return True
 
@@ -325,19 +309,16 @@ class Router:
 
     self.updates[srcip].append(packet) #entire packet
 
-    #print("the update packet originally")
-    #print(json.dumps(self.updates[srcip], sort_keys=True, indent=4))
 
     # add entry to forwarding table
     path = packet[MESG][APTH]
     path.append(self.asn)
     packet[MESG][APTH] = path
 
-    #print("the update message after apath")
 
     msg = packet[MESG]
 
-    #print(json.dumps(msg, sort_keys=True, indent=4))
+
 
     if not(srcip in self.routes):
       self.routes[srcip] = []
@@ -358,10 +339,6 @@ class Router:
         packet['src'] = ''.join(dest_ip_port)
         packet['dst'] = ip
 
-        # print("the packet im sending")
-        # print(json.dumps(packet, sort_keys=True, indent=4))
-        # print("the socket ip i'm sending it to: " + ip)
-
         jsonpack = json.dumps(packet)
         # if receiving message from peer or provider then only send to customer
         if self.relations[srcip] == PEER or self.relations[srcip] == PROV:
@@ -379,22 +356,18 @@ class Router:
     srcip = packet[SRCE]
     # add revoke message to updates
     self.updates[srcip].append(packet)  # entire packet
-    # print(self.routes)
 
     # remove from routing table
     for rtarget in packet["msg"]:
       for target in self.routes[srcip]:
         if rtarget["network"] == target["network"]:
           if rtarget["netmask"] == target["netmask"]:
-            # print("REMOVE TARGET")
             self.routes[srcip].remove(target)
 
     # check to make sure other targets are available otherwise remove srcip
     if len(self.routes[srcip]) == 0:
       del self.routes[srcip]
 
-    # print("\n")
-    # print(self.routes)
 
     # decide if send copies of announcement to neighboring routers
     for ip in self.sockets.keys():
@@ -405,10 +378,6 @@ class Router:
         dest_ip_port[len(ip) - 1] = '1'
         packet['src'] = ''.join(dest_ip_port)
         packet['dst'] = ip
-
-        # print("the packet im sending")
-        # print(json.dumps(packet, sort_keys=True, indent=4))
-        # print("the socket ip i'm sending it to: " + ip)
 
         jsonpack = json.dumps(packet)
         # if receiving message from peer or provider then only send to customer
@@ -450,49 +419,45 @@ class Router:
   def handle_packet(self, srcip, packet):
     """ dispatches a packet """
     # TODO
-    #print("REACHED HANDLE PACKET")
     type = packet['type']
     if type == 'update':
       self.update(srcip, packet)
-      #print("sending to update")
+
     elif type == 'dump':
       self.dump(packet)
     elif type == 'data':
       # check if a route is in forwarding table
       # if so forward
       if srcip in self.routes:
-        return self.forward(srcip,packet)
+        self.forward(srcip,packet)
       else:
         # if no route found send to no route (Send error)
         return False
     elif type == 'revoke':
-      # print("SRCIP HANDLE: ")
-      # print(srcip)
       self.revoke(packet)
-      #print("sending to revoke")
 
     return True
 
-  def send_error(self, conn, msg):
+  def send_error(self, conn, packet):
     """ Send a no_route error message """
     # dst ip becomes src ip to return the message
     # src ip becomes this ip
     # type becomes "no route"
 
-    print("msg")
-    print(msg)
-
-    dest_ip_port = list(srcip)
-    dest_ip_port[len(srcip) - 1] = '1'
-    msg[SRCE] = ''.join(dest_ip_port)
-    msg[DEST] = msg[SRCE]
-    msg[TYPE] = NRTE
-
+    packet['type'] = "no route"
+    src = packet['src']
+    packet['src'] = packet['dst']
+    packet['dst'] = src
     # msg is empty
-    msg[MESG] = {}
+    packet[MESG] = ''
 
-    jsonpack = json.dumps(msg)
-    conn.sendall(jsonpack.encode())
+    print("packet send error")
+    print(packet)
+
+    # send from port incoming...current dst ip?
+    msg = json.dumps(packet)
+    # sock = self.sockets[src]
+    conn.sendall(msg.encode())
 
     return
 
@@ -511,13 +476,13 @@ class Router:
             if self.sockets[sock] == conn:
               srcip = sock
           msg = json.loads(k)
+          print("msg after load")
+          print(msg)
           # TODO commented out below code because handled by handle packet
           #self.update(srcip, msg)
-          #print(msg[TYPE])
-          #print(json.dumps(msg, sort_keys=True, indent=4))
-          print("msg")
-          print(msg)
           if not self.handle_packet(srcip, msg):
+            print("msg")
+            print(msg)
             self.send_error(conn, msg)
         else:
           return
@@ -527,5 +492,4 @@ if __name__ == "__main__":
   PARSER.add_argument('networks', type=str, nargs='+', help="networks")
   args = PARSER.parse_args()
   networks = args.networks
-  #print(networks)
   router = Router(args.networks).run()   #custruct router object and call run method

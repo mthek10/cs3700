@@ -184,7 +184,6 @@ class Router:
     else:
       for route in routes:
         if self.relations[route[0]] == CUST:
-
           outroutes.append(route)
 
     return outroutes
@@ -282,13 +281,16 @@ class Router:
     best_route = self.get_route(srcip, packet[DEST]) #is a socket
     sock = best_route
 
-
     if sock == None:
-      dest_ip_port = list(srcip)
-      dest_ip_port[len(srcip) - 1] = '1'
-      packet[SRCE] = ''.join(dest_ip_port)
-      packet[DEST] = srcip
-      packet[TYPE] = NRTE
+      # dest_ip_port = list(srcip)
+      # dest_ip_port[len(srcip) - 1] = '1'
+      # packet[SRCE] = ''.join(dest_ip_port)
+      # packet[DEST] = srcip
+      # packet[TYPE] = NRTE
+      # packet[MESG] = {}
+      # sock = self.sockets[srcip]
+      self.send_error(self.sockets[srcip], packet, srcip)
+      return;
 
     jsonpack = json.dumps(packet)
     sock.sendall(jsonpack.encode())
@@ -324,10 +326,6 @@ class Router:
       self.routes[srcip] = []
 
     self.routes[srcip].append(msg)
-
-    # decide if cust or provider sent update
-    cust_update = self.relations[srcip]
-
 
     # decide if send copies of announcement to neighboring routers
     for ip in self.sockets.keys():
@@ -418,38 +416,46 @@ class Router:
 
   def handle_packet(self, srcip, packet):
     """ dispatches a packet """
-    # TODO
+    print(packet)
     type = packet['type']
     if type == 'update':
       self.update(srcip, packet)
-
     elif type == 'dump':
       self.dump(packet)
     elif type == 'data':
       # check if a route is in forwarding table
       # if so forward
-      if srcip in self.routes:
-        self.forward(srcip,packet)
-      else:
-        # if no route found send to no route (Send error)
-        return False
+      self.forward(srcip,packet)
+      print("FOUND SOURCE IP IN ROUTES KEYS")
     elif type == 'revoke':
       self.revoke(packet)
 
     return True
 
-  def send_error(self, conn, packet):
+  def send_error(self, conn, packet, neighbor_ip):
     """ Send a no_route error message """
     # dst ip becomes src ip to return the message
     # src ip becomes this ip
     # type becomes "no route"
 
+    orig_ip = packet[SRCE]
+    ip = neighbor_ip
+    dest_ip_port = list(ip)
+    dest_ip_port[len(ip) - 1] = '1'
+    packet['src'] = ''.join(dest_ip_port)
+    packet['dst'] = orig_ip
+
+    print("FROM SEND ERROR HI")
+    #
+    # src = packet['src']
+    # packet['src'] = packet['dst']
+    # packet['dst'] = src
+
+
+
     packet['type'] = "no route"
-    src = packet['src']
-    packet['src'] = packet['dst']
-    packet['dst'] = src
     # msg is empty
-    packet[MESG] = ''
+    packet[MESG] = {}
 
     print("packet send error")
     print(packet)
@@ -476,14 +482,11 @@ class Router:
             if self.sockets[sock] == conn:
               srcip = sock
           msg = json.loads(k)
-          print("msg after load")
-          print(msg)
-          # TODO commented out below code because handled by handle packet
-          #self.update(srcip, msg)
           if not self.handle_packet(srcip, msg):
-            print("msg")
-            print(msg)
-            self.send_error(conn, msg)
+            # TODO SEND ERROR GOES HERE
+            return False;
+
+
         else:
           return
 

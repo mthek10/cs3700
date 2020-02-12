@@ -299,7 +299,10 @@ class Router:
 
   def coalesce(self):
     """ coalesce any routes that are right next to each other """
-    # TODO (this is the most difficult task, save until last)   
+    # TODO (this is the most difficult task, save until last)
+
+
+
     return False
 
   def update(self, srcip, packet):
@@ -416,7 +419,6 @@ class Router:
 
   def handle_packet(self, srcip, packet):
     """ dispatches a packet """
-    print(packet)
     type = packet['type']
     if type == 'update':
       self.update(srcip, packet)
@@ -426,7 +428,6 @@ class Router:
       # check if a route is in forwarding table
       # if so forward
       self.forward(srcip,packet)
-      print("FOUND SOURCE IP IN ROUTES KEYS")
     elif type == 'revoke':
       self.revoke(packet)
 
@@ -445,20 +446,9 @@ class Router:
     packet['src'] = ''.join(dest_ip_port)
     packet['dst'] = orig_ip
 
-    print("FROM SEND ERROR HI")
-    #
-    # src = packet['src']
-    # packet['src'] = packet['dst']
-    # packet['dst'] = src
-
-
-
     packet['type'] = "no route"
     # msg is empty
     packet[MESG] = {}
-
-    print("packet send error")
-    print(packet)
 
     # send from port incoming...current dst ip?
     msg = json.dumps(packet)

@@ -15,6 +15,6 @@ Post-Milestone Additions:
 - Using Dictionaries to store an expanded forwarding table called self.routes.
 - Implemeted Revoke to use same logic as update for forwarding revoke to neighboring routes
 -- Revoke also uses path disaggregation to split the IP path
-- Implements no route messages through the send_error method which rebuilds the packet to sned no route
-- implements ip to bit methods and get longest prefix method to calculate path aggregation
+- Implements no route messages through the send_error method which rebuilds the packet to send no route
+- Implements ip to bit methods and get longest prefix method to calculate path aggregation
 - Implements path disaggregation by create a rebuild method which uses updates we saved from each incoming message.
